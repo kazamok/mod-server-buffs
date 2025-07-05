@@ -1,0 +1,235 @@
+#include "Common.h"        // Common.h를 최상단으로 이동
+#include "WorldSessionMgr.h" // WorldSessionMgr.h를 최상단으로 이동
+#include "SpellMgr.h"      // SpellMgr.h를 최상단으로 이동
+#include "GameTime.h"      // GameTime.h를 최상단으로 이동
+#include "ScriptMgr.h"
+#include "World.h"
+#include "Player.h"
+#include "Chat.h"
+#include "Config.h"
+#include "Spell.h"
+#include "SharedDefines.h" 
+#include <fstream>
+#include <string>
+#include <chrono>
+#include <iomanip>
+#include <filesystem>
+#include <sstream>
+#include <vector>
+#include <set>
+#include <ctime>
+
+// 전역 변수 선언
+// 모듈 설정 값을 저장할 전역 변수
+bool g_serverBuffsEnabled = false;
+std::string g_serverBuffsAnnounceMessage = "";
+bool g_serverBuffsShowAnnounceMessage = false;
+std::vector<uint32> g_serverBuffsSpellIds;
+std::vector<std::string> g_serverBuffsCastTimes;
+
+// 오늘 이미 버프를 적용한 시간을 기록 (중복 적용 방지)
+std::set<std::string> g_serverBuffsAppliedTimesToday;
+// 마지막으로 버프가 적용된 날짜를 추적하는 변수
+std::string g_lastBuffApplicationDate;
+
+// 문자열을 구분자로 분리하여 벡터로 반환하는 헬퍼 함수
+static std::vector<std::string> SplitString(const std::string& s, char delimiter)
+{
+    std::vector<std::string> tokens;
+    std::string token;
+    std::istringstream tokenStream(s);
+    while (std::getline(tokenStream, token, delimiter))
+    {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+// 모듈 전용 설정 파일을 로드하고 파싱하는 함수
+void LoadModuleSpecificConfig_ServerBuffs()
+{
+    std::string configFilePath = "./configs/modules/mod-server-buffs.conf.dist";
+
+    std::ifstream configFile;
+
+    if (std::filesystem::exists(configFilePath))
+    {
+        configFile.open(configFilePath);
+        LOG_INFO("module", "[서버 버프] 설정 파일 로드: {}", configFilePath);
+    }
+    else
+    {
+        LOG_ERROR("module", "[서버 버프] 설정 파일을 찾을 수 없습니다. 모듈이 비활성화됩니다.");
+        g_serverBuffsEnabled = false;
+        g_serverBuffsAnnounceMessage = "서버 버프 모듈이 설정 파일을 찾을 수 없어 비활성화되었습니다.";
+        g_serverBuffsShowAnnounceMessage = true;
+        return;
+    }
+
+    if (!configFile.is_open())
+    {
+        LOG_ERROR("module", "[서버 버프] 설정 파일을 열 수 없습니다. 모듈이 비활성화됩니다.");
+        g_serverBuffsEnabled = false;
+        g_serverBuffsAnnounceMessage = "서버 버프 모듈이 설정 파일을 열 수 없어 비활성화되었습니다.";
+        g_serverBuffsShowAnnounceMessage = true;
+        return;
+    }
+
+    // 기본값 설정
+    g_serverBuffsEnabled = true;
+    g_serverBuffsAnnounceMessage = "서버 전역 버프가 적용되었습니다!";
+    g_serverBuffsShowAnnounceMessage = true;
+    g_serverBuffsSpellIds.clear();
+    g_serverBuffsCastTimes.clear();
+
+    std::string line;
+    while (std::getline(configFile, line))
+    {
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        std::istringstream iss(line);
+        std::string key;
+        if (std::getline(iss, key, '='))
+        {
+            std::string value;
+            if (std::getline(iss, value))
+            {
+                key.erase(0, key.find_first_not_of(" \t"));
+                key.erase(key.find_last_not_of(" \t") + 1);
+                value.erase(0, value.find_first_not_of(" \t"));
+                value.erase(value.find_last_not_of(" \t") + 1);
+
+                if (key == "ServerBuffs.Enable")
+                {
+                    g_serverBuffsEnabled = (value == "1");
+                }
+                else if (key == "ServerBuffs.AnnounceMessage")
+                {
+                    if (value.length() >= 2 && value.front() == '"' && value.back() == '"')
+                    {
+                        g_serverBuffsAnnounceMessage = value.substr(1, value.length() - 2);
+                    }
+                    else
+                    {
+                        g_serverBuffsAnnounceMessage = value;
+                    }
+                }
+                else if (key == "ServerBuffs.ShowAnnounceMessage")
+                {
+                    g_serverBuffsShowAnnounceMessage = (value == "1");
+                }
+                else if (key == "ServerBuffs.BuffSpells")
+                {
+                    std::vector<std::string> spellStr = SplitString(value, ',');
+                    for (const std::string& s : spellStr)
+                    {
+                        try
+                        {
+                            g_serverBuffsSpellIds.push_back(std::stoul(s));
+                        }
+                        catch (const std::exception& e)
+                        {
+                            LOG_ERROR("module", "[서버 버프] 잘못된 주문 ID 형식: {} ({})", s, e.what());
+                        }
+                    }
+                }
+                else if (key == "ServerBuffs.CastTimes")
+                {
+                    g_serverBuffsCastTimes = SplitString(value, ',');
+                }
+            }
+        }
+    }
+    configFile.close();
+}
+
+// 월드 서버 이벤트를 처리하는 클래스
+class mod_server_buffs_world : public WorldScript
+{
+public:
+    mod_server_buffs_world() : WorldScript("mod_server_buffs_world") { }
+
+    void OnBeforeConfigLoad(bool reload) override
+    {
+        // 모듈 전용 설정 파일을 로드하고 파싱합니다。
+        LoadModuleSpecificConfig_ServerBuffs();
+    }
+
+    void OnUpdate(uint32 diff) override
+    {
+        if (!g_serverBuffsEnabled)
+            return;
+
+        // 매 분마다 시간을 확인하여 버프 적용 시간을 체크합니다.
+        // GameTime::GetGameTime()은 초 단위이므로, 분 단위로 변환합니다.
+        time_t rawtime = static_cast<time_t>(GameTime::GetGameTime().count());
+        struct tm* timeinfo = std::localtime(&rawtime);
+
+        std::stringstream current_time_ss;
+        current_time_ss << std::setfill('0') << std::setw(2) << timeinfo->tm_hour << ":"
+                        << std::setfill('0') << std::setw(2) << timeinfo->tm_min;
+        std::string currentTimeStr = current_time_ss.str();
+
+        std::stringstream current_date_ss;
+        current_date_ss << std::put_time(std::localtime(&rawtime), "%Y-%m-%d");
+        std::string currentDateStr = current_date_ss.str();
+
+        // 자정이 지나면 적용된 시간 목록을 초기화합니다.
+        if (g_lastBuffApplicationDate.empty() || currentDateStr != g_lastBuffApplicationDate)
+        {
+            g_serverBuffsAppliedTimesToday.clear();
+            g_lastBuffApplicationDate = currentDateStr; // 마지막 적용 날짜 업데이트
+        }
+
+        for (const std::string& castTime : g_serverBuffsCastTimes)
+        {
+            // 이미 오늘 해당 시간에 버프를 적용했는지 확인 (날짜가 바뀌면 세트가 초기화되므로 문제 없음)
+            if (currentTimeStr == castTime && g_serverBuffsAppliedTimesToday.find(castTime) == g_serverBuffsAppliedTimesToday.end())
+            {
+                LOG_INFO("module", "[서버 버프] 버프 적용 시간 도달: {}", castTime);
+
+                // 서버 전역 메시지 전송
+                if (g_serverBuffsShowAnnounceMessage)
+                {
+                    WorldSessionMgr::Instance()->SendServerMessage(SERVER_MSG_STRING, g_serverBuffsAnnounceMessage);
+                }
+
+                // 모든 온라인 플레이어에게 버프 적용
+                WorldSessionMgr::Instance()->DoForAllOnlinePlayers([&](Player* player)
+                {
+                    if (!player || !player->IsInWorld())
+                        return;
+
+                    for (uint32 spellId : g_serverBuffsSpellIds)
+                    {
+                        SpellInfo const* spellInfo = SpellMgr::instance()->GetSpellInfo(spellId);
+                        if (!spellInfo)
+                        {
+                            LOG_ERROR("module", "[서버 버프] 유효하지 않은 주문 ID: {}", spellId);
+                            continue;
+                        }
+
+                        // 버프 적용 (Unit::AddAura 사용)
+                        // 0은 지속 시간, player는 대상, true는 캐스터가 자신임을 의미
+                        if (player->AddAura(spellId, player))
+                        {
+                            LOG_INFO("module", "[서버 버프] 플레이어 {} (GUID: {})에게 주문 {} 적용 성공.", player->GetName(), player->GetGUID().GetRawValue(), spellId);
+                        }
+                        else
+                        {
+                            LOG_ERROR("module", "[서버 버프] 플레이어 {} (GUID: {})에게 주문 {} 적용 실패.", player->GetName(), player->GetGUID().GetRawValue(), spellId);
+                        }
+                    }
+                });
+                g_serverBuffsAppliedTimesToday.insert(castTime); // 해당 시간 버프 적용 완료 기록
+            }
+        }
+    }
+};
+
+// 모든 스크립트를 추가하는 함수 (모듈 로드 시 호출됨)
+void Addmod_server_buffsScripts()
+{
+    new mod_server_buffs_world();
+}
