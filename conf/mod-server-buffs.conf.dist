@@ -13,7 +13,7 @@ ServerBuffs.ShowAnnounceMessage = 1
 
 # List of spell IDs to apply as buffs (comma-separated)
 # Example: @BLACKHAND := 16609, @ONICIA := 22888, @HAKAR := 24425, @HEALTHCRM := 34410,
-ServerBuffs.BuffSpells = 16609,22888,24425
+ServerBuffs.BuffSpells = 16609,22888,24425,34410
 
 # List of times to cast buffs (HH:MM format, comma-separated)
 # Example: 09:00,12:00,18:00,21:00
