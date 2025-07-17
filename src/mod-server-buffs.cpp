@@ -18,6 +18,7 @@
 #include <vector>
 #include <set>
 #include <ctime>
+#include <map>
 
 // 전역 변수 선언
 // 모듈 설정 값을 저장할 전역 변수
@@ -31,6 +32,9 @@ std::vector<std::string> g_serverBuffsCastTimes;
 std::set<std::string> g_serverBuffsAppliedTimesToday;
 // 마지막으로 버프가 적용된 날짜를 추적하는 변수
 std::string g_lastBuffApplicationDate;
+// 각 버프 적용 시간별 사전 안내가 이루어졌는지 기록 (중복 방지)
+// Key: CastTime (e.g., "18:30"), Value: Set of announced minutes (e.g., {10, 5, 1})
+std::map<std::string, std::set<int>> g_serverBuffsAnnouncedTimes;
 
 // 문자열을 구분자로 분리하여 벡터로 반환하는 헬퍼 함수
 static std::vector<std::string> SplitString(const std::string& s, char delimiter)
@@ -161,41 +165,70 @@ public:
         if (!g_serverBuffsEnabled)
             return;
 
-        // 매 분마다 시간을 확인하여 버프 적용 시간을 체크합니다.
-        // GameTime::GetGameTime()은 초 단위이므로, 분 단위로 변환합니다.
         time_t rawtime = static_cast<time_t>(GameTime::GetGameTime().count());
         struct tm* timeinfo = std::localtime(&rawtime);
 
-        std::stringstream current_time_ss;
-        current_time_ss << std::setfill('0') << std::setw(2) << timeinfo->tm_hour << ":"
-                        << std::setfill('0') << std::setw(2) << timeinfo->tm_min;
-        std::string currentTimeStr = current_time_ss.str();
-
         std::stringstream current_date_ss;
-        current_date_ss << std::put_time(std::localtime(&rawtime), "%Y-%m-%d");
+        current_date_ss << std::put_time(timeinfo, "%Y-%m-%d");
         std::string currentDateStr = current_date_ss.str();
 
-        // 자정이 지나면 적용된 시간 목록을 초기화합니다.
+        // 자정이 지나면 적용된 시간 목록 및 안내 기록을 초기화합니다.
         if (g_lastBuffApplicationDate.empty() || currentDateStr != g_lastBuffApplicationDate)
         {
             g_serverBuffsAppliedTimesToday.clear();
-            g_lastBuffApplicationDate = currentDateStr; // 마지막 적용 날짜 업데이트
+            g_serverBuffsAnnouncedTimes.clear(); // 사전 안내 기록 초기화
+            g_lastBuffApplicationDate = currentDateStr;
+            LOG_INFO("module", "[서버 버프] 날짜가 변경되어 버프 적용 및 안내 기록을 초기화합니다.");
         }
 
         for (const std::string& castTime : g_serverBuffsCastTimes)
         {
-            // 이미 오늘 해당 시간에 버프를 적용했는지 확인 (날짜가 바뀌면 세트가 초기화되므로 문제 없음)
-            if (currentTimeStr == castTime && g_serverBuffsAppliedTimesToday.find(castTime) == g_serverBuffsAppliedTimesToday.end())
+            int castHour, castMinute;
+            try
+            {
+                size_t pos;
+                castHour = std::stoi(castTime, &pos);
+                if (pos >= castTime.length() || castTime[pos] != ':') continue;
+                castMinute = std::stoi(castTime.substr(pos + 1));
+            }
+            catch (const std::exception&)
+            {
+                continue; // 잘못된 형식의 시간은 건너뜁니다.
+            }
+
+            int currentTotalMinutes = timeinfo->tm_hour * 60 + timeinfo->tm_min;
+            int castTotalMinutes = castHour * 60 + castMinute;
+
+            // 사전 안내 로직
+            std::vector<int> preAnnounceMinutes = {10, 5, 1};
+            for (int minutesBefore : preAnnounceMinutes)
+            {
+                if (currentTotalMinutes == castTotalMinutes - minutesBefore)
+                {
+                    if (g_serverBuffsAnnouncedTimes[castTime].find(minutesBefore) == g_serverBuffsAnnouncedTimes[castTime].end())
+                    {
+                        if (g_serverBuffsShowAnnounceMessage)
+                        {
+                            std::stringstream announce_ss;
+                            announce_ss << minutesBefore << "분 후에 서버 전체 버프가 적용됩니다!";
+                            WorldSessionMgr::Instance()->SendServerMessage(SERVER_MSG_STRING, announce_ss.str());
+                            LOG_INFO("module", "[서버 버프] {}분 전 안내 메시지 전송: {}", minutesBefore, castTime);
+                        }
+                        g_serverBuffsAnnouncedTimes[castTime].insert(minutesBefore);
+                    }
+                }
+            }
+
+            // 버프 적용 로직
+            if (currentTotalMinutes == castTotalMinutes && g_serverBuffsAppliedTimesToday.find(castTime) == g_serverBuffsAppliedTimesToday.end())
             {
                 LOG_INFO("module", "[서버 버프] 버프 적용 시간 도달: {}", castTime);
 
-                // 서버 전역 메시지 전송
                 if (g_serverBuffsShowAnnounceMessage)
                 {
                     WorldSessionMgr::Instance()->SendServerMessage(SERVER_MSG_STRING, g_serverBuffsAnnounceMessage);
                 }
 
-                // 모든 온라인 플레이어에게 버프 적용
                 WorldSessionMgr::Instance()->DoForAllOnlinePlayers([&](Player* player)
                 {
                     if (!player || !player->IsInWorld())
@@ -203,15 +236,12 @@ public:
 
                     for (uint32 spellId : g_serverBuffsSpellIds)
                     {
-                        SpellInfo const* spellInfo = SpellMgr::instance()->GetSpellInfo(spellId);
-                        if (!spellInfo)
+                        if (!sSpellMgr->GetSpellInfo(spellId))
                         {
                             LOG_ERROR("module", "[서버 버프] 유효하지 않은 주문 ID: {}", spellId);
                             continue;
                         }
 
-                        // 버프 적용 (Unit::AddAura 사용)
-                        // 0은 지속 시간, player는 대상, true는 캐스터가 자신임을 의미
                         if (player->AddAura(spellId, player))
                         {
                             LOG_INFO("module", "[서버 버프] 플레이어 {} (GUID: {})에게 주문 {} 적용 성공.", player->GetName(), player->GetGUID().GetRawValue(), spellId);
@@ -222,7 +252,7 @@ public:
                         }
                     }
                 });
-                g_serverBuffsAppliedTimesToday.insert(castTime); // 해당 시간 버프 적용 완료 기록
+                g_serverBuffsAppliedTimesToday.insert(castTime);
             }
         }
     }
