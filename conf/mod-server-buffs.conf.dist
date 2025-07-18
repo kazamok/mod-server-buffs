@@ -17,4 +17,4 @@ ServerBuffs.BuffSpells = 16609,22888,24425,34410
 
 # List of times to cast buffs (HH:MM format, comma-separated)
 # Example: 09:00,12:00,18:00,21:00
-ServerBuffs.CastTimes = 09:30,12:30,18:30,21:30
+ServerBuffs.CastTimes = 09:30,14:30,19:30,00:30,05:30
