@@ -1,3 +1,7 @@
+
+/*
+mod-server-buffs.cpp */
+
 #include "Common.h"        // Common.h를 최상단으로 이동
 #include "WorldSessionMgr.h" // WorldSessionMgr.h를 최상단으로 이동
 #include "SpellMgr.h"      // SpellMgr.h를 최상단으로 이동
