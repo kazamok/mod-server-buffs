@@ -16,7 +16,7 @@
 #
 #    서버 버프 - 모듈 활성화 및 메시지 설정
 #        Description: 서버 전체에 버프를 적용하는 모듈의 활성화 및 메시지 관련 설정입니다.
-#        Author:      AzerothCore Community
+#        Author:      Kazamok, AzerothCore Community
 #
 ###################################################################################################
 
@@ -47,7 +47,7 @@ ServerBuffs.ShowAnnounceMessage = 1
 #
 #    서버 버프 - 버프 및 시전 시간 설정
 #        Description: 적용할 버프 주문과 시전 시간을 설정합니다.
-#        Author:      AzerothCore Community
+#        Author:      Kazamok, AzerothCore Community
 #
 ###################################################################################################
 
