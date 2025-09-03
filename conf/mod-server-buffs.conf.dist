@@ -63,4 +63,4 @@ ServerBuffs.BuffSpells = 16609,22888,24425,34410
 #        Description: 버프를 시전할 시간을 HH:MM 형식으로 쉼표(,)로 구분하여 입력합니다.
 #        Example:     09:00,12:00,18:00,21:00
 #
-ServerBuffs.CastTimes = 09:30,14:30,19:30,00:30,05:30
+ServerBuffs.CastTimes = 00:30,04:30,08:30,12:30,16:30,20:30
