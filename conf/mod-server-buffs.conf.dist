@@ -56,7 +56,7 @@ ServerBuffs.ShowAnnounceMessage = 1
 #        Description: 적용할 버프의 주문 ID 목록을 쉼표(,)로 구분하여 입력합니다.
 #        Example:     @BLACKHAND := 16609, @ONICIA := 22888, @HAKAR := 24425, @HEALTHCRM := 34410,
 #
-ServerBuffs.BuffSpells = 16609,22888,24425,34410
+ServerBuffs.BuffSpells = 16609,24425,34410
 
 #
 #    ServerBuffs.CastTimes
