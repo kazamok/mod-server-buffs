@@ -56,7 +56,7 @@ static std::vector<std::string> SplitString(const std::string& s, char delimiter
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
 void LoadModuleSpecificConfig_ServerBuffs()
 {
-    std::string configFilePath = "./configs/modules/mod-server-buffs.conft";
+    std::string configFilePath = "./configs/modules/mod-server-buffs.conf";
 
     std::ifstream configFile;
 
@@ -267,4 +267,5 @@ void Addmod_server_buffsScripts()
 {
     new mod_server_buffs_world();
 }
+
 
