@@ -64,3 +64,10 @@ ServerBuffs.BuffSpells = 16609,24425,34410
 #        Example:     09:00,12:00,18:00,21:00
 #
 ServerBuffs.CastTimes = 00:30,03:00,05:30,08:00,10:30,13:00,14:30,17:00,19:30,22:00
+
+#
+#    ServerBuffs.ExcludeLevels
+#        Description: 버프 적용에서 제외할 레벨 목록을 쉼표(,)로 구분하여 입력합니다.
+#        Example:     60,70,80
+#
+ServerBuffs.ExcludeLevels = 60,70,80
