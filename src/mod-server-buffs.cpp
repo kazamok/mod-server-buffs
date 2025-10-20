@@ -31,6 +31,7 @@ std::string g_serverBuffsAnnounceMessage = "";
 bool g_serverBuffsShowAnnounceMessage = false;
 std::vector<uint32> g_serverBuffsSpellIds;
 std::vector<std::string> g_serverBuffsCastTimes;
+std::vector<int> g_serverBuffsExcludeLevels;
 
 // 오늘 이미 버프를 적용한 시간을 기록 (중복 적용 방지)
 std::set<std::string> g_serverBuffsAppliedTimesToday;
@@ -89,6 +90,7 @@ void LoadModuleSpecificConfig_ServerBuffs()
     g_serverBuffsShowAnnounceMessage = true;
     g_serverBuffsSpellIds.clear();
     g_serverBuffsCastTimes.clear();
+    g_serverBuffsExcludeLevels.clear();
 
     std::string line;
     while (std::getline(configFile, line))
@@ -145,6 +147,21 @@ void LoadModuleSpecificConfig_ServerBuffs()
                 else if (key == "ServerBuffs.CastTimes")
                 {
                     g_serverBuffsCastTimes = SplitString(value, ',');
+                }
+                else if (key == "ServerBuffs.ExcludeLevels")
+                {
+                    std::vector<std::string> levelStr = SplitString(value, ',');
+                    for (const std::string& s : levelStr)
+                    {
+                        try
+                        {
+                            g_serverBuffsExcludeLevels.push_back(std::stoi(s));
+                        }
+                        catch (const std::exception& e)
+                        {
+                            LOG_ERROR("module", "[서버 버프] 잘못된 제외 레벨 형식: {} ({})", s, e.what());
+                        }
+                    }
                 }
             }
         }
@@ -237,6 +254,24 @@ public:
                 {
                     if (!player || !player->IsInWorld())
                         return;
+
+                    // Check if player's level is in the exclude list
+                    uint8 playerLevel = player->GetLevel();
+                    bool isExcluded = false;
+                    for (int excludedLevel : g_serverBuffsExcludeLevels)
+                    {
+                        if (playerLevel == excludedLevel)
+                        {
+                            isExcluded = true;
+                            break;
+                        }
+                    }
+
+                    if (isExcluded)
+                    {
+                        LOG_INFO("module", "[서버 버프] 플레이어 {} (GUID: {}, 레벨: {})는 제외 레벨이므로 버프를 건너뜁니다.", player->GetName(), player->GetGUID().GetRawValue(), playerLevel);
+                        return; // Skip this player
+                    }
 
                     for (uint32 spellId : g_serverBuffsSpellIds)
                     {
