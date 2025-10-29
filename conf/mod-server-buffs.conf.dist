@@ -31,9 +31,9 @@ ServerBuffs.Enable = 1
 #
 #    ServerBuffs.AnnounceMessage
 #        Description: 버프가 적용될 때 표시할 메시지를 설정합니다.
-#        Default:     "서버 전역 버프가 적용되었습니다!"
+#        Default:     "[시스템] 서버 전역 버프가 적용되었습니다!"
 #
-ServerBuffs.AnnounceMessage = "서버 전역 버프가 적용되었습니다!"
+ServerBuffs.AnnounceMessage = "[시스템] 서버 전역 버프가 적용되었습니다!"
 
 #
 #    ServerBuffs.ShowAnnounceMessage
@@ -72,3 +72,4 @@ ServerBuffs.CastTimes = 00:30,03:00,05:30,08:00,10:30,13:00,14:30,17:00,19:30,22
 #
 
 ServerBuffs.ExcludeLevels = 60,70,80
+
