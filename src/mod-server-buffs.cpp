@@ -32,6 +32,8 @@ bool g_serverBuffsShowAnnounceMessage = false;
 std::vector<uint32> g_serverBuffsSpellIds;
 std::vector<std::string> g_serverBuffsCastTimes;
 std::vector<int> g_serverBuffsExcludeLevels;
+std::vector<uint32> g_serverBuffsSpecialSpellIds;
+std::vector<std::string> g_serverBuffsExcludeClasses;
 
 // 오늘 이미 버프를 적용한 시간을 기록 (중복 적용 방지)
 std::set<std::string> g_serverBuffsAppliedTimesToday;
@@ -53,6 +55,25 @@ static std::vector<std::string> SplitString(const std::string& s, char delimiter
     }
     return tokens;
 }
+
+std::string GetClassName(uint8 classId)
+{
+    switch (classId)
+    {
+        case CLASS_WARRIOR: return "Warrior";
+        case CLASS_PALADIN: return "Paladin";
+        case CLASS_HUNTER: return "Hunter";
+        case CLASS_ROGUE: return "Rogue";
+        case CLASS_PRIEST: return "Priest";
+        case CLASS_DEATH_KNIGHT: return "DeathKnight";
+        case CLASS_SHAMAN: return "Shaman";
+        case CLASS_MAGE: return "Mage";
+        case CLASS_WARLOCK: return "Warlock";
+        case CLASS_DRUID: return "Druid";
+        default: return "Unknown";
+    }
+}
+
 
 // 모듈 전용 설정 파일을 로드하고 파싱하는 함수
 void LoadModuleSpecificConfig_ServerBuffs()
@@ -91,6 +112,8 @@ void LoadModuleSpecificConfig_ServerBuffs()
     g_serverBuffsSpellIds.clear();
     g_serverBuffsCastTimes.clear();
     g_serverBuffsExcludeLevels.clear();
+    g_serverBuffsSpecialSpellIds.clear();
+    g_serverBuffsExcludeClasses.clear();
 
     std::string line;
     while (std::getline(configFile, line))
@@ -162,6 +185,25 @@ void LoadModuleSpecificConfig_ServerBuffs()
                             LOG_ERROR("module", "[서버 버프] 잘못된 제외 레벨 형식: {} ({})", s, e.what());
                         }
                     }
+                }
+                else if (key == "ServerBuffs.Specialbuffs")
+                {
+                    std::vector<std::string> spellStr = SplitString(value, ',');
+                    for (const std::string& s : spellStr)
+                    {
+                        try
+                        {
+                            g_serverBuffsSpecialSpellIds.push_back(std::stoul(s));
+                        }
+                        catch (const std::exception& e)
+                        {
+                            LOG_ERROR("module", "[서버 버프] 잘못된 특별 버프 주문 ID 형식: {} ({})", s, e.what());
+                        }
+                    }
+                }
+                else if (key == "ServerBuffs.ExcludeClasss")
+                {
+                    g_serverBuffsExcludeClasses = SplitString(value, ',');
                 }
             }
         }
@@ -271,6 +313,39 @@ public:
                     {
                         LOG_INFO("module", "[서버 버프] 플레이어 {} (GUID: {}, 레벨: {})는 제외 레벨이므로 버프를 건너뜁니다.", player->GetName(), player->GetGUID().GetRawValue(), playerLevel);
                         return; // Skip this player
+                    }
+
+                    // Special buffs with class exclusion
+                    std::string playerClass = GetClassName(player->getClass());
+                    bool isClassExcluded = false;
+                    for (const std::string& excludedClass : g_serverBuffsExcludeClasses)
+                    {
+                        if (playerClass == excludedClass)
+                        {
+                            isClassExcluded = true;
+                            break;
+                        }
+                    }
+
+                    if (!isClassExcluded)
+                    {
+                        for (uint32 spellId : g_serverBuffsSpecialSpellIds)
+                        {
+                            if (!sSpellMgr->GetSpellInfo(spellId))
+                            {
+                                LOG_ERROR("module", "[서버 버프] 유효하지 않은 특별 버프 주문 ID: {}", spellId);
+                                continue;
+                            }
+
+                            if (player->AddAura(spellId, player))
+                            {
+                                LOG_INFO("module", "[서버 버프] 플레이어 {} (GUID: {})에게 특별 버프 주문 {} 적용 성공.", player->GetName(), player->GetGUID().GetRawValue(), spellId);
+                            }
+                            else
+                            {
+                                LOG_ERROR("module", "[서버 버프] 플레이어 {} (GUID: {})에게 특별 버프 주문 {} 적용 실패.", player->GetName(), player->GetGUID().GetRawValue(), spellId);
+                            }
+                        }
                     }
 
                     for (uint32 spellId : g_serverBuffsSpellIds)
