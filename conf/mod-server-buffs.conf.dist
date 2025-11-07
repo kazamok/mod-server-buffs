@@ -89,7 +89,7 @@ ServerBuffs.ExcludeLevels = 60,70,80
 #        Example:     12345,56789
 #
 
-ServerBuffs.Specialbuffs = 12345,56789
+ServerBuffs.Specialbuffs = 57203
 
 #
 #    ServerBuffs.ExcludeClasss
@@ -97,4 +97,5 @@ ServerBuffs.Specialbuffs = 12345,56789
 #        Example:     Warrior,Rogue,Hunter,Priest,Paladin,Shaman,Mage,Warlock,Druid,DeathKnight
 #
 
-ServerBuffs.ExcludeClasss = Warrior,Rogue,Paladin,
+ServerBuffs.ExcludeClasss = Warrior,Rogue,Paladin
+
